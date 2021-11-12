@@ -1,0 +1,5 @@
+package ddbstruct
+
+func getString() {
+
+}
