@@ -1,5 +1,0 @@
-package ddbstruct
-
-func getString() {
-
-}

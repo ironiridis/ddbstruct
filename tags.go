@@ -42,7 +42,11 @@ func (c *structMetadataCache) get(d interface{}) structMetadata {
 	for n := 0; n < dte.NumField(); n++ {
 		stv, err := parseFieldTag(dte, n)
 		if err != nil {
-			panic(fmt.Errorf("cannot parse tags on field %d of struct %s: %w", n, dte.Kind(), err))
+			panic(fmt.Errorf("cannot parse tags on field %d of struct %s: %w", n, dte, err))
+		}
+		err = stv.typecalc()
+		if err != nil {
+			panic(fmt.Errorf("unable to typecalc field %d of struct %s: %w", n, dte, err))
 		}
 		ret.f = append(ret.f, *stv)
 	}
@@ -63,7 +67,7 @@ var fieldTagMatcher = regexp.MustCompile(
 
 func parseFieldTag(t reflect.Type, idx int) (*fieldTagData, error) {
 	var err error
-	ret := &fieldTagData{fieldname: t.Field(idx).Name, gotype: t, structidx: idx}
+	ret := &fieldTagData{fieldname: t.Field(idx).Name, gotype: t.Field(idx).Type, structidx: idx}
 	tagdata := t.Field(idx).Tag.Get("ddb")
 	for len(tagdata) > 0 {
 		subexp := fieldTagMatcher.FindStringSubmatch(tagdata)

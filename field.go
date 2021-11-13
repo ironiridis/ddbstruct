@@ -19,7 +19,7 @@ type fieldTagData struct {
 	sk        bool
 	fieldname string
 	structidx int
-	defvalue  string
+	defvalue  string // only valid for string typed fields
 	optional  bool
 	enctype   string
 	gotype    reflect.Type
@@ -27,37 +27,24 @@ type fieldTagData struct {
 	dec       decodeFunc
 }
 
+var typeTime = reflect.TypeOf(time.Time{})
+var typeDuration = reflect.TypeOf(time.Duration(0))
+var typeBytes = reflect.TypeOf([]byte{})
+
+func imp(t reflect.Type, d interface{}) bool {
+	return t.Implements(reflect.TypeOf(d).Elem())
+}
+
 func isBinEncoder(t reflect.Type) bool {
-	return t.Implements(reflect.TypeOf((*encoding.BinaryMarshaler)(nil))) &&
-		t.Implements(reflect.TypeOf((*encoding.BinaryUnmarshaler)(nil)))
+	return imp(t, new(encoding.BinaryMarshaler)) && imp(t, new(encoding.BinaryUnmarshaler))
 }
 
 func isTextEncoder(t reflect.Type) bool {
-	return t.Implements(reflect.TypeOf((*encoding.TextMarshaler)(nil))) &&
-		t.Implements(reflect.TypeOf((*encoding.TextUnmarshaler)(nil)))
+	return imp(t, new(encoding.TextMarshaler)) && imp(t, new(encoding.TextUnmarshaler))
 }
 
 func isJSONEncoder(t reflect.Type) bool {
-	return t.Implements(reflect.TypeOf((*json.Marshaler)(nil))) &&
-		t.Implements(reflect.TypeOf((*json.Unmarshaler)(nil)))
-}
-
-func (ftd *fieldTagData) E(d interface{}) (av types.AttributeValue, err error) {
-	if ftd.enc == nil {
-		err = fmt.Errorf("no encode function available for field %q of %T", ftd.fieldname, d)
-		return
-	}
-	defer func() {
-		if panicVal := recover(); panicVal != nil {
-			if panicErr, ok := panicVal.(error); ok {
-				err = fmt.Errorf("failed to encode %q of %T: %w", ftd.fieldname, d, panicErr)
-			} else {
-				err = fmt.Errorf("failed to encode %q of %T: %v", ftd.fieldname, d, panicVal)
-			}
-		}
-	}()
-	av = ftd.enc(reflect.ValueOf(d).Elem().Field(ftd.structidx))
-	return
+	return imp(t, new(json.Marshaler)) && imp(t, new(json.Unmarshaler))
 }
 
 func (ftd *fieldTagData) D(d interface{}, av types.AttributeValue) (err error) {
@@ -83,8 +70,8 @@ func (ftd *fieldTagData) D(d interface{}, av types.AttributeValue) (err error) {
 }
 
 func (ftd *fieldTagData) guessScalerCodec() bool {
-	switch ftd.gotype {
-	case reflect.TypeOf("string"):
+	switch ftd.gotype.Kind() {
+	case reflect.String:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberS{Value: d.String()}
 		}
@@ -92,11 +79,11 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.SetString(av.(*types.AttributeValueMemberS).Value)
 		}
 		return true
-	case reflect.TypeOf(int(0)):
-	case reflect.TypeOf(int8(0)):
-	case reflect.TypeOf(int16(0)):
-	case reflect.TypeOf(int32(0)):
-	case reflect.TypeOf(int64(0)):
+	case reflect.Int:
+	case reflect.Int8:
+	case reflect.Int16:
+	case reflect.Int32:
+	case reflect.Int64:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(d.Int(), 10)}
 		}
@@ -112,11 +99,11 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.SetInt(i)
 		}
 		return true
-	case reflect.TypeOf(uint(0)):
-	case reflect.TypeOf(uint8(0)):
-	case reflect.TypeOf(uint16(0)):
-	case reflect.TypeOf(uint32(0)):
-	case reflect.TypeOf(uint64(0)):
+	case reflect.Uint:
+	case reflect.Uint8:
+	case reflect.Uint16:
+	case reflect.Uint32:
+	case reflect.Uint64:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberN{Value: strconv.FormatUint(d.Uint(), 10)}
 		}
@@ -132,7 +119,7 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.SetUint(i)
 		}
 		return true
-	case reflect.TypeOf(float32(0.0)):
+	case reflect.Float32:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberN{Value: strconv.FormatFloat(d.Float(), 'G', -1, 32)}
 		}
@@ -148,7 +135,7 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.SetFloat(f)
 		}
 		return true
-	case reflect.TypeOf(float64(0.0)):
+	case reflect.Float64:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberN{Value: strconv.FormatFloat(d.Float(), 'G', -1, 64)}
 		}
@@ -164,7 +151,17 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.SetFloat(f)
 		}
 		return true
-	case reflect.TypeOf([]byte{0}):
+	case reflect.Bool:
+		ftd.enc = func(d reflect.Value) types.AttributeValue {
+			return &types.AttributeValueMemberBOOL{Value: d.Bool()}
+		}
+		ftd.dec = func(d reflect.Value, av types.AttributeValue) {
+			d.SetBool(av.(*types.AttributeValueMemberBOOL).Value)
+		}
+		return true
+	}
+	switch ftd.gotype { // not scalar but pretty close
+	case typeBytes:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			cp := make([]byte, d.Len())
 			copy(cp, d.Bytes())
@@ -177,21 +174,14 @@ func (ftd *fieldTagData) guessScalerCodec() bool {
 			d.Set(reflect.ValueOf(cp))
 		}
 		return true
-	case reflect.TypeOf(bool(true)):
-		ftd.enc = func(d reflect.Value) types.AttributeValue {
-			return &types.AttributeValueMemberBOOL{Value: d.Bool()}
-		}
-		ftd.dec = func(d reflect.Value, av types.AttributeValue) {
-			d.SetBool(av.(*types.AttributeValueMemberBOOL).Value)
-		}
-		return true
+
 	}
 	return false
 }
 
 func (ftd *fieldTagData) guessCommonCodec() bool {
 	switch ftd.gotype {
-	case reflect.TypeOf(time.Duration(0)):
+	case typeDuration:
 		ftd.enc = func(d reflect.Value) types.AttributeValue {
 			return &types.AttributeValueMemberS{Value: d.Interface().(time.Duration).String()}
 		}
@@ -235,10 +225,11 @@ func (ftd *fieldTagData) typecalc() error {
 		if ftd.guessImplementsCodec() { // matches a known codec
 			return nil
 		}
+		return fmt.Errorf("unable to guess encoding for %q field of type %s", ftd.fieldname, ftd.gotype)
 	}
 	switch ftd.enctype {
 	case "string":
-		if ftd.gotype == reflect.TypeOf("string") {
+		if ftd.gotype.Kind() == reflect.String {
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				return &types.AttributeValueMemberS{Value: d.String()}
 			}
@@ -253,7 +244,7 @@ func (ftd *fieldTagData) typecalc() error {
 		}
 		return fmt.Errorf("field %q cannot be typed as string automatically", ftd.fieldname)
 	case "binary":
-		if ftd.gotype == reflect.TypeOf([]byte{}) {
+		if ftd.gotype == typeBytes {
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				return &types.AttributeValueMemberS{Value: d.String()}
 			}
@@ -288,7 +279,7 @@ func (ftd *fieldTagData) typecalc() error {
 		return nil
 	case "nanoseconds":
 		switch ftd.gotype {
-		case reflect.TypeOf(time.Duration(0)):
+		case typeDuration:
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				ns := d.Interface().(time.Duration).Nanoseconds()
 				return &types.AttributeValueMemberN{Value: strconv.FormatInt(ns, 10)}
@@ -301,7 +292,7 @@ func (ftd *fieldTagData) typecalc() error {
 				d.SetInt(int64(time.Nanosecond) * nv)
 			}
 			return nil
-		case reflect.TypeOf(time.Time{}):
+		case typeTime:
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				t := d.Interface().(time.Time)
 				return &types.AttributeValueMemberN{Value: strconv.FormatInt(t.UnixNano(), 10)}
@@ -315,10 +306,10 @@ func (ftd *fieldTagData) typecalc() error {
 			}
 			return nil
 		}
-	case "epoch":
-	case "seconds":
+		return fmt.Errorf("cannot encode field %q (a %s) as %q", ftd.fieldname, ftd.gotype, ftd.enctype)
+	case "epoch", "seconds":
 		switch ftd.gotype {
-		case reflect.TypeOf(time.Duration(0)):
+		case typeDuration:
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				s := d.Interface().(time.Duration).Seconds()
 				return &types.AttributeValueMemberN{Value: strconv.FormatFloat(s, 'G', 64, 0)}
@@ -331,7 +322,7 @@ func (ftd *fieldTagData) typecalc() error {
 				d.SetInt(int64(time.Nanosecond) * nv)
 			}
 			return nil
-		case reflect.TypeOf(time.Time{}):
+		case typeTime:
 			ftd.enc = func(d reflect.Value) types.AttributeValue {
 				t := d.Interface().(time.Time).Unix()
 				return &types.AttributeValueMemberN{Value: strconv.FormatInt(t, 10)}
@@ -345,6 +336,7 @@ func (ftd *fieldTagData) typecalc() error {
 			}
 			return nil
 		}
+		return fmt.Errorf("cannot encode field %q (a %s) as %q", ftd.fieldname, ftd.gotype, ftd.enctype)
 	}
-	return fmt.Errorf("cannot determine encoding for %q field of %s", ftd.fieldname, ftd.gotype)
+	return fmt.Errorf("cannot encode field %q (a %s) with unknown enctype %q", ftd.fieldname, ftd.gotype, ftd.enctype)
 }
