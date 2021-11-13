@@ -101,8 +101,8 @@ func Put(ctx context.Context, svc *dynamodb.Client, table string, data interface
 		Item:      avmap{},
 		TableName: &table,
 	}
-	for idx := range dmd.f {
-		err = dmd.f[idx].appendAV(putcmd.Item, data)
+	for _, f := range dmd.f {
+		err = f.appendAV(putcmd.Item, data)
 		if err != nil {
 			return
 		}
