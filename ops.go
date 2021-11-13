@@ -110,3 +110,27 @@ func Put(ctx context.Context, svc *dynamodb.Client, table string, data interface
 	_, err = svc.PutItem(ctx, putcmd)
 	return err
 }
+
+func Delete(ctx context.Context, svc *dynamodb.Client, table string, data interface{}) (err error) {
+	dmd := cache.get(data)
+	getcmd := &dynamodb.DeleteItemInput{
+		Key:       avmap{},
+		TableName: &table,
+	}
+	if dmd.pk == nil {
+		err = fmt.Errorf("no field is tagged as the partitioning key (pk) for %T", data)
+		return
+	}
+	err = dmd.pk.appendAV(getcmd.Key, data)
+	if err != nil {
+		return
+	}
+	if dmd.sk != nil {
+		err = dmd.sk.appendAV(getcmd.Key, data)
+		if err != nil {
+			return
+		}
+	}
+	_, err = svc.DeleteItem(ctx, getcmd)
+	return
+}
