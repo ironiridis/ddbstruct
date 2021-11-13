@@ -38,6 +38,9 @@ func (c *structMetadataCache) get(d interface{}) structMetadata {
 
 	ret := structMetadata{}
 	for n := 0; n < dte.NumField(); n++ {
+		if !dte.Field(n).IsExported() {
+			continue
+		}
 		stv, err := parseFieldTag(dte, n)
 		if err != nil {
 			panic(fmt.Errorf("cannot parse tags on field %d of struct %s: %w", n, dte, err))
@@ -51,6 +54,9 @@ func (c *structMetadataCache) get(d interface{}) structMetadata {
 			if ret.pk != nil {
 				panic(fmt.Errorf("field %q tagged as pk, but pk is already tagged on field %q", stv.name, ret.pk.name))
 			}
+			if stv.optional {
+				panic(fmt.Errorf("field %q tagged as pk, but also tagged as optional", stv.name))
+			}
 			ret.pk = &ret.f[n]
 		}
 		if stv.sk {
@@ -60,7 +66,18 @@ func (c *structMetadataCache) get(d interface{}) structMetadata {
 			if stv.pk {
 				panic(fmt.Errorf("field %q tagged as sk, but also tagged as pk", stv.name))
 			}
+			if stv.optional {
+				panic(fmt.Errorf("field %q tagged as sk, but also tagged as optional", stv.name))
+			}
 			ret.sk = &ret.f[n]
+		}
+		if stv.defvalue != "" {
+			if stv.optional {
+				panic(fmt.Errorf("field %q tagged with default value %q, but also tagged as optional", stv.name, stv.defvalue))
+			}
+			if stv.gotype.Kind() != reflect.String {
+				panic(fmt.Errorf("field %q tagged with default value %q, but type %s (ie %s) does not support a default value", stv.name, stv.defvalue, stv.gotype, stv.gotype.Kind()))
+			}
 		}
 	}
 
