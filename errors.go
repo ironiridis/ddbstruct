@@ -7,8 +7,83 @@ import (
 	ddbtype "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
+func attrValString(av ddbtype.AttributeValue) string {
+	// simple types that don't need built-up return strings
+	switch v := av.(type) {
+	case *ddbtype.AttributeValueMemberBOOL:
+		if v.Value {
+			return "true"
+		}
+		return "false"
+	case *ddbtype.AttributeValueMemberNULL:
+		return "(null)"
+	case *ddbtype.AttributeValueMemberB:
+		return fmt.Sprintf("%q", v.Value)
+	case *ddbtype.AttributeValueMemberS:
+		return fmt.Sprintf("%q", v.Value)
+	case *ddbtype.AttributeValueMemberN:
+		return v.Value
+	}
+
+	// more complicated types that benefit from a string builder
+	var buf strings.Builder
+	switch v := av.(type) {
+	case *ddbtype.AttributeValueMemberBS:
+		buf.WriteByte('[')
+		for idx := range v.Value {
+			if idx > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%q", v.Value[idx])
+		}
+		buf.WriteByte(']')
+	case *ddbtype.AttributeValueMemberSS:
+		buf.WriteByte('[')
+		for idx := range v.Value {
+			if idx > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%q", v.Value[idx])
+		}
+		buf.WriteByte(']')
+	case *ddbtype.AttributeValueMemberNS:
+		buf.WriteByte('[')
+		for idx := range v.Value {
+			if idx > 0 {
+				buf.WriteByte(',')
+			}
+			buf.WriteString(v.Value[idx])
+		}
+		buf.WriteByte(']')
+	case *ddbtype.AttributeValueMemberL:
+		buf.WriteByte('[')
+		for idx := range v.Value {
+			if idx > 0 {
+				buf.WriteByte(',')
+			}
+			buf.WriteString(attrValString(v.Value[idx]))
+		}
+		buf.WriteByte(']')
+	case *ddbtype.AttributeValueMemberM:
+		buf.WriteByte('{')
+		var multi bool
+		for k := range v.Value {
+			if multi {
+				buf.WriteByte(',')
+			}
+			buf.WriteString(fmt.Sprintf("%q:", k))
+			buf.WriteString(attrValString(v.Value[k]))
+			multi = true
+		}
+		buf.WriteByte('}')
+	default:
+		return fmt.Sprintf("unknown attribute %#v", av)
+	}
+	return buf.String()
+}
+
 type NoItemError struct {
-	Key map[string]ddbtype.AttributeValue
+	Key avmap
 }
 
 func (e *NoItemError) Error() string {
@@ -21,32 +96,8 @@ func (e *NoItemError) Error() string {
 		if buf.Len() > 0 {
 			buf.WriteByte(',')
 		}
-		fmt.Fprintf(&buf, "%q=%s", k, e.Key[k])
+		fmt.Fprintf(&buf, "%q=%s", k, attrValString(e.Key[k]))
 	}
 
 	return "no item found matching key " + buf.String()
-}
-
-type EncodeError struct {
-	Err     error
-	KeyName string
-}
-
-func (e *EncodeError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("failed to encode key %q: %s", e.KeyName, e.Err.Error())
-	}
-	return fmt.Sprintf("failed to encode key %q", e.KeyName)
-}
-
-type DecodeError struct {
-	Err     error
-	KeyName string
-}
-
-func (e *DecodeError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("failed to decode key %q: %s", e.KeyName, e.Err.Error())
-	}
-	return fmt.Sprintf("failed to decode key %q", e.KeyName)
 }
