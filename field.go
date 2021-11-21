@@ -28,6 +28,7 @@ func (f *field) appendAV(m avmap, d interface{}) error {
 		}
 		if f.defvalue != "" { // apply default value
 			m[f.name] = f.enc(&struct{ S string }{S: f.defvalue}, 0)
+			return nil
 		}
 	}
 	m[f.name] = f.enc(d, f.idx)
