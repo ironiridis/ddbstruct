@@ -80,7 +80,7 @@ func Get(ctx context.Context, svc *dynamodb.Client, table string, data interface
 				err = fmt.Errorf("cannot set field %q", f.name)
 				return
 			}
-			f.dec(dst.Field(f.idx), av)
+			f.dec(data, f.idx, av)
 		}
 	}
 	return
@@ -113,7 +113,7 @@ func Put(ctx context.Context, svc *dynamodb.Client, table string, data interface
 
 func Delete(ctx context.Context, svc *dynamodb.Client, table string, data interface{}) (err error) {
 	dmd := cache.get(data)
-	getcmd := &dynamodb.DeleteItemInput{
+	delcmd := &dynamodb.DeleteItemInput{
 		Key:       avmap{},
 		TableName: &table,
 	}
@@ -121,16 +121,16 @@ func Delete(ctx context.Context, svc *dynamodb.Client, table string, data interf
 		err = fmt.Errorf("no field is tagged as the partitioning key (pk) for %T", data)
 		return
 	}
-	err = dmd.pk.appendAV(getcmd.Key, data)
+	err = dmd.pk.appendAV(delcmd.Key, data)
 	if err != nil {
 		return
 	}
 	if dmd.sk != nil {
-		err = dmd.sk.appendAV(getcmd.Key, data)
+		err = dmd.sk.appendAV(delcmd.Key, data)
 		if err != nil {
 			return
 		}
 	}
-	_, err = svc.DeleteItem(ctx, getcmd)
+	_, err = svc.DeleteItem(ctx, delcmd)
 	return
 }

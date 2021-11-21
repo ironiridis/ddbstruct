@@ -22,15 +22,14 @@ func (f *field) appendAV(m avmap, d interface{}) error {
 	if f.enc == nil {
 		return fmt.Errorf("no encode function available for field %q of %T", f.name, d)
 	}
-	val := reflect.ValueOf(d).Elem().Field(f.idx)
-	if val.IsZero() {
+	if reflect.ValueOf(d).Elem().Field(f.idx).IsZero() {
 		if f.optional { // skip zero attribute
 			return nil
 		}
 		if f.defvalue != "" { // apply default value
-			val = reflect.ValueOf(f.defvalue)
+			m[f.name] = f.enc(&struct{ S string }{S: f.defvalue}, 0)
 		}
 	}
-	m[f.name] = f.enc(val)
+	m[f.name] = f.enc(d, f.idx)
 	return nil
 }
